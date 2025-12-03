@@ -167,7 +167,7 @@ Worker results: ${JSON.stringify(workerResult)}`
   const replyText = finalResponse.choices[0].message.content;
 
   return {
-    reply: replyText,
+    reply: replyText.replace(/"/g, "'"),
     structured: {
       plan,
       workerResult,
