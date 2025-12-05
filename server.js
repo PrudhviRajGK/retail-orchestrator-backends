@@ -1048,6 +1048,40 @@ router.get("/me", verifyUser, async (req, res) => {
   }
 });
 
+// NEW: Public-facing /profile endpoint (same as /api/me)
+router.get("/profile", verifyUser, async (req, res) => {
+  try {
+    const authUserId = req.authUser.id;
+
+    const customer = await fetchCustomer(authUserId);
+
+    if (!customer) {
+      return res.status(404).json({
+        error: "Customer not found",
+        reply: "Please complete your profile setup."
+      });
+    }
+
+    res.json({
+      id: customer.id,
+      name: customer.name,
+      email: req.authUser.email,
+      loyalty_tier: customer.loyalty_tier,
+      store_location: customer.store_location,
+      total_spend: customer.total_spend,
+      last_seen_channel: customer.last_seen_channel,
+      session_context: customer.session_context || {}
+    });
+
+  } catch (err) {
+    console.error("GET /profile error:", err);
+    res.status(500).json({
+      error: "Failed to fetch profile"
+    });
+  }
+});
+
+
 router.get("/customers/:id", async (req, res) => {
   try {
     const customer = await fetchCustomerById(req.params.id);
