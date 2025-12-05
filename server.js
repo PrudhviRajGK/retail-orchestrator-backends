@@ -278,9 +278,9 @@ Recent Sessions: ${JSON.stringify(recentSessions)}`
   return JSON.parse(jsonText);
 }
 
-async function runRetailOrchestrator({ user_query, end_user_id, channel }) {
+async function runRetailOrchestrator({ user_query, customer_id, channel }) {
   // 1) Fetch customer from database
-  const customer = await fetchCustomer(end_user_id);
+  const customer = await fetchCustomer(customer_id);
   
   if (!customer) {
     return {
@@ -290,7 +290,7 @@ async function runRetailOrchestrator({ user_query, end_user_id, channel }) {
   }
 
   // 2) Get recent session history for context
-  const recentSessions = await getRecentSessions(end_user_id, 3);
+  const recentSessions = await getRecentSessions(customer_id, 3);
 
   // 3) Detect channel switch
   const lastChannel = customer.last_seen_channel;
@@ -573,6 +573,42 @@ function fulfillmentAgent({ orderId, mode, storeLocation, slot }) {
  |--------------------------------------------------------------------------
 */
 
+// 🔥 LOGIN ENDPOINT THAT RETURNS CUSTOMER ID
+app.post("/api/auth/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    // Authenticate user
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) throw error;
+
+    const authUser = data.user;
+
+    // Fetch matching customer row
+    const { data: customer, error: custErr } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("auth_user_id", authUser.id)
+      .single();
+
+    if (custErr) throw custErr;
+
+    res.json({
+      success: true,
+      token: data.session.access_token,
+      customer_id: customer.id,   // 🔥 IMPORTANT
+      profile: customer
+    });
+
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.get("/api/customers/:id", async (req, res) => {
   try {
     const customer = await fetchCustomer(req.params.id);
@@ -652,17 +688,57 @@ app.get("/api/inventory/:sku", async (req, res) => {
   }
 });
 
+// 🔥 CART ENDPOINT - UPDATED TO USE customer_id
+app.post("/api/cart", async (req, res) => {
+  try {
+    const { customer_id, sku, qty, price, channel } = req.body;
+    
+    if (!customer_id || !sku) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    // Fetch customer
+    const customer = await fetchCustomer(customer_id);
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
+
+    // Load existing cart
+    let session = customer.session_context || {};
+    let cart = session.cart || [];
+
+    // Add item or increment quantity
+    const existing = cart.find(i => i.sku === sku);
+    if (existing) {
+      existing.qty += qty || 1;
+    } else {
+      cart.push({ sku, qty: qty || 1, price });
+    }
+
+    session.cart = cart;
+
+    // Save updated session context
+    await updateCustomerChannel(customer_id, channel || "web", session);
+
+    res.json({ success: true, cart });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔥 ORCHESTRATOR ENDPOINT - UPDATED TO USE customer_id
 app.post("/api/retail-orchestrator", async (req, res) => {
   try {
-    const { user_query, end_user_id, channel } = req.body;
+    const { user_query, customer_id, channel } = req.body;
 
-    if (!user_query || !end_user_id) {
+    if (!user_query || !customer_id) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
     const result = await runRetailOrchestrator({
       user_query,
-      end_user_id,
+      customer_id,
       channel: channel || "web"
     });
 
