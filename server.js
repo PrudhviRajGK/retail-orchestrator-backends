@@ -13,6 +13,9 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+//router here
+const router = express.Router();
+
 // Supabase Clients
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -954,7 +957,7 @@ Keep responses under 3 sentences. Be enthusiastic and helpful.`
 /**
  * GET /api/me - FIXED: Returns session_context
  */
-app.get("/api/me", verifyUser, async (req, res) => {
+router.get("/me", verifyUser, async (req, res) => {
   try {
     const authUserId = req.authUser.id;
     
@@ -988,7 +991,7 @@ app.get("/api/me", verifyUser, async (req, res) => {
   }
 });
 
-app.get("/api/customers/:id", async (req, res) => {
+router.get("/customers/:id", async (req, res) => {
   try {
     const customer = await fetchCustomerById(req.params.id);
     
@@ -1003,7 +1006,7 @@ app.get("/api/customers/:id", async (req, res) => {
   }
 });
 
-app.get("/api/products", async (req, res) => {
+router.get("/products", async (req, res) => {
   try {
     const { category, occasion, limit = 20 } = req.query;
     
@@ -1033,7 +1036,7 @@ app.get("/api/products", async (req, res) => {
   }
 });
 
-app.get("/api/products/:sku", async (req, res) => {
+router.get("/products/:sku", async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("products")
@@ -1052,7 +1055,7 @@ app.get("/api/products/:sku", async (req, res) => {
   }
 });
 
-app.get("/api/inventory/:sku", async (req, res) => {
+router.get("/inventory/:sku", async (req, res) => {
   try {
     const { location } = req.query;
     
@@ -1078,7 +1081,7 @@ app.get("/api/inventory/:sku", async (req, res) => {
   }
 });
 
-app.post("/api/cart", verifyUser, async (req, res) => {
+router.post("/cart", verifyUser, async (req, res) => {
   try {
     const authUserId = req.authUser.id;
     const { sku, qty = 1, price, channel = "web" } = req.body;
@@ -1149,7 +1152,7 @@ app.post("/api/cart", verifyUser, async (req, res) => {
   }
 });
 
-app.get("/api/cart", verifyUser, async (req, res) => {
+router.get("/cart", verifyUser, async (req, res) => {
   try {
     const authUserId = req.authUser.id;
     
@@ -1174,7 +1177,7 @@ app.get("/api/cart", verifyUser, async (req, res) => {
   }
 });
 
-app.delete("/api/cart/:sku", verifyUser, async (req, res) => {
+router.delete("/cart/:sku", verifyUser, async (req, res) => {
   try {
     const authUserId = req.authUser.id;
     const { sku } = req.params;
@@ -1213,7 +1216,7 @@ app.delete("/api/cart/:sku", verifyUser, async (req, res) => {
 /**
  * POST /api/retail-orchestrator - Main chat endpoint
  */
-app.post("/api/retail-orchestrator", verifyUser, async (req, res) => {
+router.post("/retail-orchestrator", verifyUser, async (req, res) => {
   try {
     console.log("\n" + "🔥".repeat(20) + " NEW CHAT REQUEST " + "🔥".repeat(20));
     console.log("User:", req.authUser?.email);
@@ -1267,7 +1270,7 @@ app.post("/api/retail-orchestrator", verifyUser, async (req, res) => {
   }
 });
 
-app.get("/api/health", async (req, res) => {
+router.get("/health", async (req, res) => {
   try {
     const { error: dbError } = await supabase
       .from('customers')
@@ -1317,6 +1320,9 @@ app.get("/", (req, res) => {
     documentation: "See README for API usage"
   });
 });
+
+app.use("/api", router);
+
 
 // Error handling
 app.use((req, res) => {
