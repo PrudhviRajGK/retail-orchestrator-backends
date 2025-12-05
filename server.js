@@ -10,6 +10,18 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
+// ⭐ 1) Create a Supabase Client instance that can validate tokens
+const supabaseAuth = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+);
+
 // Initialize Supabase with SERVICE ROLE KEY for RLS bypass in backend
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -29,6 +41,30 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const promotions = require("./promotions.json");
 const loyaltyRules = require("./loyalty_rules.json");
 const fulfillmentRules = require("./fulfillment_rules.json");
+
+/*
+ |--------------------------------------------------------------------------
+ | MIDDLEWARE
+ |--------------------------------------------------------------------------
+*/
+
+// ⭐ 2) Add middleware to verify JWT token
+async function verifyUser(req, res, next) {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) return res.status(401).json({ error: "Missing token" });
+
+  const token = authHeader.replace("Bearer ", "");
+
+  const { data, error } = await supabaseAuth.auth.getUser(token);
+
+  if (error || !data?.user) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+
+  req.authUser = data.user; // store validated auth user
+  next();
+}
 
 /*
  |--------------------------------------------------------------------------
@@ -573,41 +609,25 @@ function fulfillmentAgent({ orderId, mode, storeLocation, slot }) {
  |--------------------------------------------------------------------------
 */
 
-// 🔥 LOGIN ENDPOINT THAT RETURNS CUSTOMER ID
-app.post("/api/auth/login", async (req, res) => {
-  const { email, password } = req.body;
+// ⭐ 3) Add /api/me endpoint to get logged-in customer identity
+app.get("/api/me", verifyUser, async (req, res) => {
+  const authUID = req.authUser.id;
 
-  try {
-    // Authenticate user
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password
-    });
+  const { data: customer, error } = await supabase
+    .from("customers")
+    .select("*")
+    .eq("auth_user_id", authUID)
+    .single();
 
-    if (error) throw error;
-
-    const authUser = data.user;
-
-    // Fetch matching customer row
-    const { data: customer, error: custErr } = await supabase
-      .from("customers")
-      .select("*")
-      .eq("auth_user_id", authUser.id)
-      .single();
-
-    if (custErr) throw custErr;
-
-    res.json({
-      success: true,
-      token: data.session.access_token,
-      customer_id: customer.id,   // 🔥 IMPORTANT
-      profile: customer
-    });
-
-  } catch (err) {
-    res.status(400).json({ error: err.message });
+  if (error || !customer) {
+    return res.status(404).json({ error: "Customer not found" });
   }
+
+  res.json(customer);
 });
+
+// ⭐ REMOVED /api/auth/login endpoint as per instructions
+// Frontend should use supabase.auth.signInWithPassword() directly
 
 app.get("/api/customers/:id", async (req, res) => {
   try {
@@ -688,19 +708,26 @@ app.get("/api/inventory/:sku", async (req, res) => {
   }
 });
 
-// 🔥 CART ENDPOINT - UPDATED TO USE customer_id
-app.post("/api/cart", async (req, res) => {
+// 🔥 CART ENDPOINT - PROTECTED WITH verifyUser middleware
+app.post("/api/cart", verifyUser, async (req, res) => {
   try {
-    const { customer_id, sku, qty, price, channel } = req.body;
+    // Get customer ID from authenticated user
+    const authUID = req.authUser.id;
     
-    if (!customer_id || !sku) {
-      return res.status(400).json({ error: "Missing required fields" });
-    }
-
-    // Fetch customer
-    const customer = await fetchCustomer(customer_id);
+    const { data: customer } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("auth_user_id", authUID)
+      .single();
+    
     if (!customer) {
       return res.status(404).json({ error: "Customer not found" });
+    }
+
+    const { sku, qty, price, channel } = req.body;
+    
+    if (!sku) {
+      return res.status(400).json({ error: "Missing required fields" });
     }
 
     // Load existing cart
@@ -718,7 +745,7 @@ app.post("/api/cart", async (req, res) => {
     session.cart = cart;
 
     // Save updated session context
-    await updateCustomerChannel(customer_id, channel || "web", session);
+    await updateCustomerChannel(customer.id, channel || "web", session);
 
     res.json({ success: true, cart });
   } catch (err) {
@@ -727,18 +754,31 @@ app.post("/api/cart", async (req, res) => {
   }
 });
 
-// 🔥 ORCHESTRATOR ENDPOINT - UPDATED TO USE customer_id
-app.post("/api/retail-orchestrator", async (req, res) => {
+// 🔥 ORCHESTRATOR ENDPOINT - PROTECTED WITH verifyUser middleware
+app.post("/api/retail-orchestrator", verifyUser, async (req, res) => {
   try {
-    const { user_query, customer_id, channel } = req.body;
+    // Get customer ID from authenticated user
+    const authUID = req.authUser.id;
+    
+    const { data: customer } = await supabase
+      .from("customers")
+      .select("*")
+      .eq("auth_user_id", authUID)
+      .single();
+    
+    if (!customer) {
+      return res.status(404).json({ error: "Customer not found" });
+    }
 
-    if (!user_query || !customer_id) {
+    const { user_query, channel } = req.body;
+
+    if (!user_query) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
     const result = await runRetailOrchestrator({
       user_query,
-      customer_id,
+      customer_id: customer.id,
       channel: channel || "web"
     });
 
