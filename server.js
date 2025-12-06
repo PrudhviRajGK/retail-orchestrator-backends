@@ -1329,7 +1329,7 @@ router.post("/cart", verifyUser, async (req, res) => {
           qty,
           price,
           name: product?.name || "Product",
-          image: product?.images || null,
+          image: product?.images?.[0] || null,
           added_at: new Date().toISOString()
               });
 
