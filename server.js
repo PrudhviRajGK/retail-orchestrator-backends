@@ -1320,7 +1320,7 @@ router.post("/cart", verifyUser, async (req, res) => {
     } else {
       const { data: product } = await supabase
         .from("products")
-        .select("name , image")
+        .select("name , images")
         .eq("sku", sku)
         .single();
       
@@ -1329,7 +1329,7 @@ router.post("/cart", verifyUser, async (req, res) => {
           qty,
           price,
           name: product?.name || "Product",
-          image: product?.image || null,
+          image: product?.images || null,
           added_at: new Date().toISOString()
               });
 
