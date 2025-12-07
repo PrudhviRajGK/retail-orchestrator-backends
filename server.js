@@ -693,7 +693,9 @@ Possible intents:
 - "check_inventory": asking about stock, availability, in-store pickup
 - "checkout": ready to buy, pay, place order, reserve
 - "post_purchase": order status, returns, exchanges, tracking
+- "support_issue": customer wants to raise complaint, refund, escalation, problem, service request, cancellation
 - "smalltalk": greetings, thank you, chit-chat
+
 
 Return valid JSON in this exact format:
 {
@@ -1468,7 +1470,40 @@ router.post("/retail-orchestrator", verifyUser, async (req, res) => {
     console.log("✅ Orchestrator completed, sending response");
     console.log("🔥".repeat(60) + "\n");
 
-    res.json(result);
+    // --- Transform workerResult so UI can read it cleanly --- //
+const response = {
+  message: result.reply,
+  products: result.structured?.workerResult?.recommendations || [],
+  actions: [],
+  fulfillment: null
+};
+
+// If fulfillment exists → map UI format
+if (result.structured?.workerResult?.fulfillment) {
+  response.fulfillment = {
+    code: result.structured.workerResult.fulfillment.pickupCode,
+    store: result.structured.workerResult.fulfillment.storeLocation,
+    slot: result.structured.workerResult.fulfillment.slot
+  };
+}
+
+// Intelligent auto actions logic
+if (response.products?.length > 0) {
+  response.actions.push("Add to cart");
+  response.actions.push("See similar");
+  response.actions.push("Reserve in store");
+}
+
+if (result.structured?.plan?.intent === "checkout") {
+  response.actions.push("Track order");
+  response.actions.push("Show pickup details");
+}
+
+// Include original structured for debugging
+response.raw = result;
+
+res.json(response);
+
     
   } catch (err) {
     console.error("❌ POST /api/retail-orchestrator FATAL ERROR:", err);
