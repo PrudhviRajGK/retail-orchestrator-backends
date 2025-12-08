@@ -6,6 +6,8 @@ An intelligent, AI-powered omnichannel retail backend built with Node.js, Expres
 
 DEMO : [![Video Title](https://img.youtube.com/vi/m_o3T-n3gVw/0.jpg)](https://www.youtube.com/watch?v=m_o3T-n3gVw)
 
+link :https://www.youtube.com/watch?v=m_o3T-n3gVw
+
 
 ## 📋 Table of Contents
 
